@@ -1,10 +1,12 @@
+from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
+from .models import BaseUser
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
-from rest_framework import permissions
+from rest_framework import permissions, viewsets, mixins
 from django.contrib import auth
 from rest_framework.response import Response
-from accounts_profile.models import UserProfile
 from .serializers import UserSerializer
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
 from django.utils.decorators import method_decorator
@@ -27,10 +29,10 @@ class CheckAuthenticatedView(APIView):
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 @method_decorator(csrf_protect, name='dispatch')
-class SignupView(APIView):
-    permission_classes = (permissions.AllowAny, )
+class AccountsViewSet(viewsets.ViewSet,mixins.ListModelMixin):
 
-    def post(self, request, format=None):
+    def create (self, request, format=None):
+        #permission_classes = (permissions.AllowAny,)
         data = self.request.data
 
         username = data['username']
@@ -39,24 +41,47 @@ class SignupView(APIView):
 
         try:
             if password == re_password:
-                if User.objects.filter(username=username).exists():
+                if BaseUser.objects.filter(username=username).exists():
                     return Response({ 'error': 'Username already exists' })
                 else:
                     if len(password) < 6:
                         return Response({ 'error': 'Password must be at least 6 characters' })
                     else:
-                        user = User.objects.create_user(username=username, password=password)
+                        user = BaseUser.objects.create_user(username=username, password=password)
 
-                        user = User.objects.get(id=user.id)
-
-                        user_profile = UserProfile.objects.create(user=user, first_name='', last_name='', phone='', city='')
-
+                        user = BaseUser.objects.get(id=user.id)
                         return Response({ 'success': 'User created successfully' })
             else:
                 return Response({ 'error': 'Passwords do not match' })
         except:
                 return Response({ 'error': 'Something went wrong when registering account' })
+    def delete(self, request, format=None):
+        user = self.request.user
+        try:
+            isAuthenticated = user.is_authenticated
+            if isAuthenticated:
+                User.objects.filter(id=user.id).delete()
+            else:
+                return Response({'isAuthenticated': 'error'})
+            return Response({ 'success': 'User deleted successfully' })
+        except:
+            return Response({ 'error': 'Something went wrong when trying to delete user' })
+    def retrieve(self,request,pk=None):
+        user = self.request.user
 
+        try:
+            isAuthenticated = user.is_authenticated
+
+            if isAuthenticated:
+                queryset = BaseUser.objects.all()
+                user_data = get_object_or_404(queryset, pk = pk)
+                serializer = UserSerializer(user_data)
+                return Response(serializer.data)
+                #return Response({'isAuthenticated': 'success'})
+            else:
+                return Response({'isAuthenticated': 'error'})
+        except:
+            return Response({'error': 'Something went wrong when checking authentication status'})
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 @method_decorator(csrf_protect, name='dispatch')
@@ -80,7 +105,8 @@ class LoginView(APIView):
         except:
             return Response({ 'error': 'Something went wrong when logging in' })
 
-
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+@method_decorator(csrf_protect, name='dispatch')
 class LogoutView(APIView):
     def post(self, request, format=None):
         try:
@@ -89,21 +115,4 @@ class LogoutView(APIView):
         except:
             return Response({ 'error': 'Something went wrong when logging out' })
 
-@method_decorator(ensure_csrf_cookie, name='dispatch')
-class GetCSRFToken(APIView):
-    permission_classes = (permissions.AllowAny, )
-
-    def get(self, request, format=None):
-        return Response({ 'success': 'CSRF cookie set' })
-
-class DeleteAccountView(APIView):
-    def delete(self, request, format=None):
-        user = self.request.user
-
-        try:
-            User.objects.filter(id=user.id).delete()
-
-            return Response({ 'success': 'User deleted successfully' })
-        except:
-            return Response({ 'error': 'Something went wrong when trying to delete user' })
 
